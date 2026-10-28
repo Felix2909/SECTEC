@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { Link } from "react-router-dom";
-import { Plus, FlaskConical, Users, ChevronRight, X, Search, UserPlus, UserMinus, ChevronDown, Upload, Video, FileText, Lock, TriangleAlert, Calendar, Pencil, Trash2 } from "lucide-react";
+import { Plus, FlaskConical, Users, X, Search, UserPlus, UserMinus, ChevronDown, Upload, Video, FileText, Lock, TriangleAlert, Calendar, Pencil, Trash2 } from "lucide-react";
 import { MainLayout } from "../componentes/SideBarUniversal";
 import Swal from "sweetalert2";
 import { API_BASE_URL, apiRequest, type UsuarioApi } from "../lib/api";
@@ -12,9 +12,9 @@ type FaseAtual = 1 | 2 | 3;
 type Etapa = 1 | 2 | 3;
 type StatusProjeto = "Rascunho" | "Aguardando Aprovação" | "Aceito" | "Recusado" | "Em Desenvolvimento" | "Submetido" | "Avaliado";
 type Membro = { id: string; nome: string; sala: string; turma?: string };
-type Orientador = { id: string; nome: string; disciplina: string; temasIds: string[] };
+type Orientador = { id: string; nome: string; disciplina: string };
 type Projeto = {
-  id: string; titulo: string; descricao: string; eixo: string; temaId?: number;
+  id: string; titulo: string; descricao: string; eixo: string; areaId?: number;
   membros: Membro[]; orientadorId: string; status: StatusProjeto; linkYoutube?: string;
   autorId?: string;
   orientadorNome?: string | null;
@@ -30,6 +30,7 @@ type TemaApi = {
   professores?: UsuarioApi[];
   orientadores?: UsuarioApi[];
 };
+type AreaApi = { id: string | number; nome: string; descricao?: string | null };
 type PeriodoEventoApi = {
   inicio?: string | null;
   fim?: string | null;
@@ -49,8 +50,8 @@ type ProjetoApi = {
   id: string | number;
   titulo: string;
   descricao: string;
-  temaId?: string | number;
-  tema?: { id: string | number; nome: string };
+  areaId?: string | number;
+  area?: { id: string | number; nome: string };
   alunoAutor?: UsuarioApi;
   projetoAlunos?: Array<{ id: string | number; aluno?: UsuarioApi }>;
   orientadores?: Array<{
@@ -197,25 +198,6 @@ function mostrarAlertaTurma({ titulo, texto, detalhe }: { titulo: string; texto:
   });
 }
 
-function getOrientadorIdsDoEixo(eixo?: TemaApi | null) {
-  if (!eixo) return [];
-
-  return [
-    eixo.professorId,
-    eixo.orientadorId,
-    eixo.professor?.id,
-    eixo.orientador?.id,
-    ...(eixo.professores?.map((professor) => professor.id) ?? []),
-    ...(eixo.orientadores?.map((orientador) => orientador.id) ?? []),
-  ]
-    .filter((id): id is string | number => id !== undefined && id !== null)
-    .map(String);
-}
-
-function orientadorAtendeEixo(orientador: Orientador, eixoId: string, eixo?: TemaApi | null) {
-  return orientador.temasIds.includes(eixoId) || getOrientadorIdsDoEixo(eixo).includes(orientador.id);
-}
-
 function statusFromProjetoApi(projeto: ProjetoApi): StatusProjeto {
   const orientacoes = projeto.orientadores ?? [];
   if (orientacoes.some((orientacao) => orientacao.status === "aceito")) return "Aceito";
@@ -301,7 +283,7 @@ function buildFasesFeira(evento?: EventoApi | null) {
   ];
 }
 
-function mapProjetoApiToProjeto(projeto: ProjetoApi, temasDisponiveis: TemaApi[] = []): Projeto & { orientadorAceito?: Orientador } {
+function mapProjetoApiToProjeto(projeto: ProjetoApi, areasDisponiveis: AreaApi[] = []): Projeto & { orientadorAceito?: Orientador } {
   const membrosMap = new Map<string, Membro>();
 
   const autor = membroFromUsuario(projeto.alunoAutor);
@@ -316,17 +298,14 @@ function mapProjetoApiToProjeto(projeto: ProjetoApi, temasDisponiveis: TemaApi[]
 
   const orientacaoAceita = projeto.orientadores?.find((item) => item.status === "aceito");
   const orientadorInfo = orientacaoAceita?.orientador;
-  const temaId = projeto.temaId ? Number(projeto.temaId) : projeto.tema?.id ? Number(projeto.tema.id) : undefined;
-  const temaNome =
-    projeto.tema?.nome ??
-    temasDisponiveis.find((item) => Number(item.id) === temaId)?.nome ??
-    (temaId ? `Área #${temaId}` : "Área não informada");
+  const areaId = projeto.areaId ? Number(projeto.areaId) : projeto.area?.id ? Number(projeto.area.id) : undefined;
+  const areaNome = projeto.area?.nome ?? areasDisponiveis.find((item) => Number(item.id) === areaId)?.nome ?? "Área não informada";
   return {
     id: String(projeto.id),
     titulo: projeto.titulo,
     descricao: projeto.descricao,
-    eixo: temaNome,
-    temaId,
+    eixo: areaNome,
+    areaId,
     membros: Array.from(membrosMap.values()),
     orientadorId: orientadorInfo ? String(orientadorInfo.id) : "",
     orientadorNome: orientadorInfo?.nome ?? null,
@@ -340,7 +319,6 @@ function mapProjetoApiToProjeto(projeto: ProjetoApi, temasDisponiveis: TemaApi[]
       id: String(orientadorInfo.id),
       nome: orientadorInfo.nome,
       disciplina: orientadorInfo.email_institucional ?? 'Orientador',
-      temasIds: []
     } : undefined,
   };
 };
@@ -444,7 +422,7 @@ function Dashboard() {
   // ── API data ──
   const [alunosDisponiveis, setAlunosDisponiveis] = useState<Membro[]>([]);
   const [alunosOcupadosIds, setAlunosOcupadosIds] = useState<string[]>([]);
-  const [eixosDisponiveis, setEixosDisponiveis] = useState<TemaApi[]>([]);
+  const [areasDisponiveis, setAreasDisponiveis] = useState<AreaApi[]>([]);
   const [orientadoresDisponiveis, setOrientadoresDisponiveis] = useState<Orientador[]>([]);
   const [eventoAtual, setEventoAtual] = useState<EventoApi | null>(null);
   const [carregandoDados, setCarregandoDados] = useState(true);
@@ -464,7 +442,6 @@ function Dashboard() {
   const [cancelandoMaterialId, setCancelandoMaterialId] = useState<number | null>(null);
   const [agoraMs, setAgoraMs] = useState(() => Date.now());
 
-  const [orientadorProjeto, setOrientadorProjeto] = useState<Orientador | null>(null);
 
   const ehAutor = projeto?.autorId === ALUNO_LOGADO.id;
 
@@ -474,7 +451,7 @@ function Dashboard() {
       setCarregandoDados(true);
       setErroDados("");
       try {
-        const [alunos, orientadores, ocupadosIds, eventos, eventoVigente, meuProjeto] = await Promise.all([
+        const [alunos, orientadores, ocupadosIds, eventos, eventoVigente, meuProjeto, areas] = await Promise.all([
           apiRequest<UsuarioApi[]>("/users/alunos"),
           apiRequest<any[]>("/orientacoes/disponiveis").catch(() =>
             apiRequest<UsuarioApi[]>("/users/orientadores")
@@ -483,15 +460,15 @@ function Dashboard() {
           apiRequest<EventoApi[]>("/evento").catch(() => []),
           apiRequest<EventoApi | null>("/evento/atual/vigente").catch(() => null),
           apiRequest<ProjetoApi | null>("/projetos/meu-projeto").catch(() => null),
+          apiRequest<AreaApi[]>("/areas").catch(() => []),
         ]);
         if (!active) return;
 
         const eventoAtualApi = eventoVigente ?? [...eventos].sort((a, b) => Number(b.id) - Number(a.id))[0] ?? null;
-        const temas = eventoAtualApi?.temas ?? [];
         const ocupadosNormalizados = ocupadosIds.map(String);
         const alunoLogadoApi = membroFromUsuario(alunos.find((a) => String(a.id) === localStorage.getItem('userId')));
         setEventoAtual(eventoAtualApi);
-        setEixosDisponiveis(temas);
+        setAreasDisponiveis(areas);
         setAlunosOcupadosIds(ocupadosNormalizados);
         if (alunoLogadoApi) {
           setMembros((prev) =>
@@ -503,11 +480,8 @@ function Dashboard() {
           );
         }
         if (meuProjeto) {
-          const projetoMapeado = mapProjetoApiToProjeto(meuProjeto, temas);
+          const projetoMapeado = mapProjetoApiToProjeto(meuProjeto, areas);
           setProjeto(projetoMapeado);
-          if (projetoMapeado.orientadorAceito) {
-            setOrientadorProjeto(projetoMapeado.orientadorAceito);
-          }
         }
 
         setAlunosDisponiveis(
@@ -521,7 +495,6 @@ function Dashboard() {
             id: String(o.id),
             nome: o.nome,
             disciplina: o.email_institucional ?? 'Orientador',
-            temasIds: (o.temas ?? o.temasSelecionados ?? []).map((tema: any) => String(tema.id)),
           }))
         );
 
@@ -549,10 +522,8 @@ function Dashboard() {
   }, []);
 
   // ── Computed ──
-  const eixoSelecionado = eixosDisponiveis.find((item) => String(item.id) === eixo);
-  const orientadoresFiltradosPorEixo = eixo
-    ? orientadoresDisponiveis.filter((orientadorItem) => orientadorAtendeEixo(orientadorItem, eixo, eixoSelecionado))
-    : [];
+  const eixoSelecionado = areasDisponiveis.find((item) => String(item.id) === eixo);
+  const orientadoresFiltradosPorEixo = eixo ? orientadoresDisponiveis : [];
   const orientadoresDisponiveisParaSolicitacao = reenviandoOrientadores
     ? orientadoresFiltradosPorEixo.filter((orientador) => !projeto?.orientadoresSolicitadosIds?.includes(orientador.id))
     : orientadoresFiltradosPorEixo;
@@ -568,7 +539,6 @@ function Dashboard() {
     return !jaAdicionado && !jaTemEquipe && bateEquipe && bateNome && bateSala && bateTurma;
   });
 
-  const orientadorExibicao = orientadorProjeto ?? orientadoresDisponiveis.find((o) => o.id === solicitacoes[0]);
   const faseAtual = getFaseAtualEvento(eventoAtual);
   const fasesFeira = buildFasesFeira(eventoAtual);
   const faseAberta = fasesFeira.find((fase) => fase.data === "Liberado");
@@ -649,10 +619,7 @@ function Dashboard() {
   // Função restaurada para permitir a troca de área
   function handleEixoChange(eixoId: string) {
     setEixo(eixoId);
-    const proximoEixo = eixosDisponiveis.find((item) => String(item.id) === eixoId);
-    const orientadoresDoEixo = orientadoresDisponiveis.filter((orientadorItem) =>
-      orientadorAtendeEixo(orientadorItem, eixoId, proximoEixo)
-    );
+    const orientadoresDoEixo = orientadoresDisponiveis;
     const orientadoresSelecionaveis = reenviandoOrientadores
       ? orientadoresDoEixo.filter((orientador) => !projeto?.orientadoresSolicitadosIds?.includes(orientador.id))
       : orientadoresDoEixo;
@@ -666,25 +633,9 @@ function Dashboard() {
     setEtapa(1);
     setTitulo(projeto.titulo);
     setDescricao(projeto.descricao);
-    setEixo(projeto.temaId ? String(projeto.temaId) : "");
+    setEixo(projeto.areaId ? String(projeto.areaId) : "");
     setSolicitacoes([]);
     setMembros(projeto.status === "Aceito" ? [] : projeto.membros);
-    setBuscaAluno("");
-    setFiltrSala("todas");
-    setFiltrTurma("todas");
-    setModalAberto(true);
-  }
-
-  function abrirSolicitacaoNovosOrientadores() {
-    if (!projeto) return;
-    setEditandoProjeto(false);
-    setReenviandoOrientadores(true);
-    setEtapa(2);
-    setTitulo("");
-    setDescricao("");
-    setEixo(projeto.temaId ? String(projeto.temaId) : "");
-    setSolicitacoes([]);
-    setMembros([ALUNO_LOGADO]);
     setBuscaAluno("");
     setFiltrSala("todas");
     setFiltrTurma("todas");
@@ -765,9 +716,9 @@ function Dashboard() {
     }
 
     if (reenviandoOrientadores && projeto) {
-      const temaId = Number(eixo);
+      const areaId = Number(eixo);
       const orientadoresIds = solicitacoes.map(Number).filter((id) => Number.isFinite(id));
-      if (!eixo || !Number.isFinite(temaId)) {
+      if (!eixo || !Number.isFinite(areaId)) {
         Swal.fire({
           icon: "warning",
           title: "Área obrigatória",
@@ -782,7 +733,7 @@ function Dashboard() {
       try {
         await apiRequest<ProjetoApi>(`/projetos/${projeto.id}`, {
           method: "PATCH",
-          body: { temaId },
+          body: { areaId },
         });
 
         await apiRequest("/projetos/solicitar-orientador", {
@@ -798,7 +749,7 @@ function Dashboard() {
         setProjeto(prev => prev ? {
           ...prev,
           eixo: eixoSelecionado?.nome ?? prev.eixo,
-          temaId,
+          areaId,
           status: "Aguardando Aprovação",
           orientadoresSolicitadosIds: [...new Set([...(prev.orientadoresSolicitadosIds ?? []), ...solicitacoes])],
         } : prev);
@@ -854,8 +805,8 @@ function Dashboard() {
       }
     }
 
-    const temaId = Number(eixo);
-    if (!editandoProjeto && !Number.isFinite(temaId)) {
+    const areaId = Number(eixo);
+    if (!editandoProjeto && !Number.isFinite(areaId)) {
       Swal.fire({
         icon: "warning",
         title: "Área obrigatória",
@@ -869,7 +820,7 @@ function Dashboard() {
     try {
       let projetoSalvo: ProjetoApi;
       if (editandoProjeto && projeto) {
-        const body: any = { titulo, descricao };
+        const body: any = { titulo, descricao, areaId };
         if (projeto.status !== "Aceito") {
           const alunosIds = membros
             .filter((membro) => membro.id !== ALUNO_LOGADO.id)
@@ -888,7 +839,7 @@ function Dashboard() {
           .filter((id) => Number.isFinite(id));
         projetoSalvo = await apiRequest<ProjetoApi>("/projetos", {
           method: "POST",
-          body: { titulo, descricao, temaId, alunosIds },
+        body: { titulo, descricao, areaId, alunosIds },
         });
       }
 
@@ -899,7 +850,7 @@ function Dashboard() {
         });
       }
 
-      const projetoAtualizado = mapProjetoApiToProjeto(projetoSalvo, eixosDisponiveis);
+      const projetoAtualizado = mapProjetoApiToProjeto(projetoSalvo, areasDisponiveis);
       setProjeto({
         ...projetoAtualizado,
         orientadorId: solicitacoes[0] ?? projetoAtualizado.orientadorId,
@@ -1604,24 +1555,17 @@ function Dashboard() {
                   {/* Área do projeto (Select Restaurado) */}
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">Área *</label>
-                    {editandoProjeto ? (
-                      <div className="w-full flex items-center gap-2 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2.5 text-sm text-slate-400 cursor-not-allowed">
-                        <Lock size={13} className="shrink-0 text-slate-300" />
-                        <span>{eixoSelecionado?.nome ?? "Área não informada"}</span>
-                      </div>
-                    ) : (
-                      <div className="relative">
+                    <div className="relative">
                         <select
                           value={eixo}
                           onChange={(e) => handleEixoChange(e.target.value)}
                           className="w-full appearance-none rounded-lg border border-slate-200 bg-white px-3 py-2.5 pr-9 text-sm transition focus:border-sectec-600 focus:outline-none focus:ring-2 focus:ring-sectec-100"
                         >
                           <option value="">Selecione uma área</option>
-                          {eixosDisponiveis.map((e) => <option key={String(e.id)} value={String(e.id)}>{e.nome}</option>)}
+                          {areasDisponiveis.map((e) => <option key={String(e.id)} value={String(e.id)}>{e.nome}</option>)}
                         </select>
                         <ChevronDown size={13} className="absolute right-3 top-3.5 text-slate-400 pointer-events-none" />
-                      </div>
-                    )}
+                    </div>
                   </div>
 
                   {/* Aviso de edição limitada */}
@@ -1630,8 +1574,8 @@ function Dashboard() {
                       <Lock size={12} className="mt-0.5 shrink-0" />
                       <span>
                         {projeto?.status === "Aceito"
-                          ? "Com o projeto aceito, apenas título e descrição podem ser alterados."
-                          : "Ao editar, só é possível alterar título, descrição e integrantes. A área e os orientadores permanecem fixos."}
+                          ? "Com o projeto aceito, título, descrição e área podem ser alterados."
+                          : "Ao editar, é possível alterar título, descrição, área e integrantes. Os pedidos de orientação existentes permanecem vinculados."}
                       </span>
                     </div>
                   )}
@@ -1640,8 +1584,7 @@ function Dashboard() {
                     <div className="flex items-start gap-2 rounded-xl bg-sectec-50 border border-sectec-100 px-3 py-2.5 text-xs text-sectec-700">
                       <FlaskConical size={13} className="mt-0.5 shrink-0" />
                       <span>
-                        Área selecionada: <strong>{eixoSelecionado?.nome ?? "não informada"}</strong>. No próximo passo você verá apenas orientadores disponíveis para esta área.
-                        {orientadoresDisponiveisParaSolicitacao.length === 0 && " Nenhum orientador escolheu esta área ainda."}
+                        Área selecionada: <strong>{eixoSelecionado?.nome ?? "não informada"}</strong>. No próximo passo você poderá escolher orientadores disponíveis.
                       </span>
                     </div>
                   )}
@@ -1652,7 +1595,7 @@ function Dashboard() {
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <p className="text-xs text-slate-500">
-                      Orientadores disponíveis para <strong className="text-sectec-700">{eixoSelecionado?.nome ?? "esta área"}</strong>
+                      Orientadores disponíveis para o projeto
                     </p>
                     <span className={`text-xs font-semibold px-2 py-0.5 rounded-full
                       ${solicitacoes.length === 0 ? "bg-slate-100 text-slate-500"
@@ -1671,7 +1614,7 @@ function Dashboard() {
                           className="w-full appearance-none rounded-lg border border-slate-200 bg-white px-3 py-2.5 pr-9 text-sm transition focus:border-sectec-600 focus:outline-none focus:ring-2 focus:ring-sectec-100"
                         >
                           <option value="">Selecione uma área</option>
-                          {eixosDisponiveis.map((item) => (
+                          {areasDisponiveis.map((item) => (
                             <option key={String(item.id)} value={String(item.id)}>{item.nome}</option>
                           ))}
                         </select>
@@ -1694,7 +1637,7 @@ function Dashboard() {
                       </div>
                       <p className="text-sm font-medium text-slate-600">Nenhum orientador disponível</p>
                       <p className="text-xs text-slate-400 mt-1">
-                        {reenviandoOrientadores ? "Todos os orientadores desta área já foram solicitados." : "Não há orientadores vinculados a esta área."}
+                        {reenviandoOrientadores ? "Todos os orientadores disponíveis já foram solicitados." : "Não há orientadores disponíveis."}
                       </p>
                     </div>
                   ) : (

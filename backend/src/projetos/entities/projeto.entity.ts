@@ -10,7 +10,7 @@ import {
 } from 'typeorm';
 import { User } from '../../users/entities/user.entity';
 import { Evento } from '../../evento/entities/evento.entity';
-import { TemaEvento } from '../../evento/entities/tema-evento.entity';
+import { Area } from '../../areas/entities/area.entity';
 import { ProjetoOrientador } from './projeto-orientador.entity';
 import { ProjetoMaterial } from '../../materiais/entities/projeto-material.entity';
 import { ProjectFile } from '../../pdf/entities/project-file.entity';
@@ -30,8 +30,8 @@ export class Projeto {
   @Column({ name: 'aluno_autor_id' })
   alunoAutorId!: number;
 
-  @Column({ name: 'tema_id' })
-  temaId!: number;
+  @Column({ name: 'area_id' })
+  areaId!: number;
 
   @Column()
   titulo!: string;
@@ -63,9 +63,9 @@ export class Projeto {
   @JoinColumn({ name: 'evento_id' })
   evento!: Evento;
 
-  @ManyToOne(() => TemaEvento)
-  @JoinColumn({ name: 'tema_id' })
-  tema!: TemaEvento;
+  @ManyToOne(() => Area, (area) => area.projetos, { nullable: false, onDelete: 'RESTRICT' })
+  @JoinColumn({ name: 'area_id' })
+  area!: Area;
 
   @OneToMany(() => ProjetoOrientador, (po) => po.projeto)
   orientadores!: ProjetoOrientador[];
