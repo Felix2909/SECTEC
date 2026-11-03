@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -9,7 +10,7 @@ import { Repository, In, DataSource, Between } from 'typeorm';
 import { StreamableFile } from '@nestjs/common';
 import { User } from '../users/entities/user.entity';
 
-import { Projeto } from '../projetos/entities/projeto.entity';
+import { Projeto, TipoProjeto } from '../projetos/entities/projeto.entity';
 import { AvaliadorProjeto } from './entities/avaliador-projeto.entity';
 import { Avaliacao } from './entities/avaliacao.entity';
 import { AvaliacaoCriterio } from './entities/avaliacao-criterio.entity';
@@ -115,7 +116,7 @@ export class AvaliacaoService {
     if (!eventoAtual) return { projetos: [] };
 
     const atribuicoes = await this.avaliadorProjetoRepository.find({
-      where: { avaliadorId, projeto: { eventoId: eventoAtual.id } },
+      where: { avaliadorId, projeto: { eventoId: eventoAtual.id, tipo: TipoProjeto.PROJETO } },
       relations: [
         'projeto',
         'projeto.evento',
@@ -210,6 +211,10 @@ export class AvaliacaoService {
 
         if (!projeto) {
           throw new NotFoundException(`Projeto ${projetoId} não encontrado.`);
+        }
+
+        if (projeto.tipo === TipoProjeto.OFICINA) {
+          throw new ForbiddenException('Oficinas não podem ser avaliadas.');
         }
 
         console.log('✅ [criarAvaliacao] Projeto encontrado:', { id: projeto.id, titulo: projeto.titulo });
@@ -374,6 +379,8 @@ export class AvaliacaoService {
         where.eventoId = eventoAtual.id;
         console.log(`🎯 Evento atual selecionado: ${eventoAtual.id}`);
       }
+
+      where.tipo = TipoProjeto.PROJETO; // oficinas ficam fora das médias
 
       const projetos = await this.projetoRepository.find({
         where,
@@ -610,7 +617,7 @@ export class AvaliacaoService {
     if (!eventoAtual) return 0;
 
     return this.avaliadorProjetoRepository.count({
-      where: { avaliadorId, projeto: { eventoId: eventoAtual.id } },
+      where: { avaliadorId, projeto: { eventoId: eventoAtual.id, tipo: TipoProjeto.PROJETO } },
     });
   }
 
@@ -794,6 +801,8 @@ export class AvaliacaoService {
       .addGroupBy('orientador.nome')
       .addGroupBy('orientador.email_institucional')
       .orderBy('mediaGeral', 'DESC');
+
+    query.andWhere('projeto.tipo = :tipo', { tipo: TipoProjeto.PROJETO });
 
     if (eventoId) {
       query.andWhere('projeto.eventoId = :eventoId', { eventoId });
