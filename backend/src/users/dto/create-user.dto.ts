@@ -1,7 +1,9 @@
 // src/users/dto/create-user.dto.ts
-import { IsEmail, IsEnum, IsInt, IsNotEmpty, IsOptional, IsString, Min } from 'class-validator';
+import {
+  IsEmail, IsEnum, IsInt, IsNotEmpty, IsOptional, IsString, Min,ValidateIf,
+} from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
-import { UserRole, UserTurma } from '../entities/user.entity';
+import {UserRole, UserTurma, TipoAvaliador,} from '../entities/user.entity';
 
 export class CreateUserDto {
   @ApiProperty({ example: 'Fulano de Tal' })
@@ -18,6 +20,18 @@ export class CreateUserDto {
   @IsEnum(UserRole, { message: 'Cargo/Role inválido.' })
   @IsNotEmpty({ message: 'O cargo é obrigatório.' })
   role_cargo: UserRole;
+
+    @ApiProperty({
+    enum: TipoAvaliador,
+    example: TipoAvaliador.REAL,
+    required: false,
+    description: 'Obrigatório quando o cargo for AVALIADOR.',
+  })
+  @ValidateIf((dto) => dto.role_cargo === UserRole.AVALIADOR)
+  @IsEnum(TipoAvaliador, {
+    message: 'O tipo de avaliador deve ser REAL ou FANTASMA.',
+  })
+  tipo_avaliador?: TipoAvaliador;
 
   @ApiProperty({ example: 'SenhaSegura123', required: false })
   @IsString()
