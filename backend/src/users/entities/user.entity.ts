@@ -19,6 +19,11 @@ export enum UserRole {
   ORIENTADOR_AREAS = 'orientador_areas'
 }
 
+export enum TipoAvaliador {
+  REAL = 'real',
+  FANTASMA = 'fantasma',
+}
+
 export enum UserTurma {
   INFORMATICA = 'informatica',
   ENFERMAGEM = 'enfermagem',
@@ -42,6 +47,14 @@ export class User {
 
   @Column({ type: 'enum', enum: UserRole })
   role_cargo!: UserRole;
+
+  @Column({
+  type: 'enum',
+  enum: TipoAvaliador,
+  nullable: true,
+  name: 'tipo_avaliador',
+})
+tipo_avaliador?: TipoAvaliador | null;
 
   @Column({ type: 'enum', enum: UserTurma, nullable: true })
   turma?: UserTurma;

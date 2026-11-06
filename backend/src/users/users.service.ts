@@ -8,7 +8,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, In } from 'typeorm';
 import { parse } from 'csv-parse/sync';
-import { User, UserTurma, UserRole } from './entities/user.entity';
+import { User, UserTurma, UserRole, TipoAvaliador } from './entities/user.entity';
 import { Evento, EventoStatus } from 'src/evento/entities/evento.entity';
 import { ComissaoEvento } from 'src/evento/entities/comissao-evento.entity';
 import { HashingProvider } from '../common/providers/hashing.provider';
@@ -67,7 +67,7 @@ export class UsersService {
   async findAllAvaliadores() {
     return this.usersRepository.find({
       where: { role_cargo: UserRole.AVALIADOR, ativo: true },
-      select: ['id', 'nome', 'email_institucional'],
+      select: ['id', 'nome', 'email_institucional', 'tipo_avaliador'],
       relations: ['temasSelecionados'],
     });
   }
@@ -200,6 +200,13 @@ export class UsersService {
    * Cria um único usuário manualmente (sem CSV).
    */
   async createIndividual(dto: CreateUserDto) {
+    if (dto.role_cargo === UserRole.AVALIADOR && !dto.tipo_avaliador) {
+    throw new BadRequestException('O tipo de avaliador é obrigatório.');
+  }
+
+    if (dto.role_cargo !== UserRole.AVALIADOR && dto.tipo_avaliador) {
+    throw new BadRequestException('Somente avaliadores podem possuir tipo de avaliador.');
+  }
     const email = dto.email_institucional.trim();
     const emailExiste = await this.usersRepository.exists({
       where: { email_institucional: email },
@@ -227,6 +234,7 @@ export class UsersService {
       ano: Math.min(credenciais.anoFinal, 4),
       ativo: credenciais.roleFinal !== UserRole.ALUNO || credenciais.anoFinal < 4,
       ano_progressao_processado: new Date().getFullYear(),
+      tipo_avaliador: dto.role_cargo === UserRole.AVALIADOR ? dto.tipo_avaliador : null,
     });
 
     try {
