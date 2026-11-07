@@ -8,7 +8,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In, DataSource, Between } from 'typeorm';
 import { StreamableFile } from '@nestjs/common';
-import { User, UserRole } from '../users/entities/user.entity';
+import { User, UserRole, TipoAvaliador } from '../users/entities/user.entity';
 
 import { Projeto, TipoProjeto } from '../projetos/entities/projeto.entity';
 import { AtualizarAvaliacaoDto } from './dto/atualizar-avaliacao.dto';
@@ -418,9 +418,30 @@ export class AvaliacaoService {
 
       console.log(`📊 Total de projetos encontrados: ${projetos.length}`);
 
+      const avaliadoresIds = [
+  ...new Set(
+    projetos.flatMap((projeto) =>
+      (projeto.avaliacoes ?? []).map((avaliacao) => avaliacao.avaliadorId),
+    ),
+  ),
+];
+
+const avaliadoresReais = avaliadoresIds.length
+  ? await this.dataSource.getRepository(User).find({
+      where: {
+        id: In(avaliadoresIds),
+        tipo_avaliador: TipoAvaliador.REAL,
+      },
+    })
+  : [];
+
+const idsReais = new Set(avaliadoresReais.map((avaliador) => avaliador.id));
+
       const resultado = projetos
         .map((projeto) => {
-          const avaliacoes = projeto.avaliacoes ?? [];
+          const avaliacoes = (projeto.avaliacoes ?? []).filter(
+  (avaliacao) => idsReais.has(avaliacao.avaliadorId),
+);
           const notas = avaliacoes.map((a) => Number(a.nota) || 0);
           const media = notas.length
             ? Number((notas.reduce((soma, n) => soma + n, 0) / notas.length).toFixed(2))
@@ -816,14 +837,23 @@ export class AvaliacaoService {
     // Ajuste para usar as relações corretas
     const query = this.projetoRepository
       .createQueryBuilder('projeto')
-      .leftJoinAndSelect('projeto.avaliacoes', 'avaliacao')
+      .leftJoin(
+  'projeto.avaliacoes',
+  'avaliacao',
+)
+.leftJoin(
+  User,
+  'avaliador',
+  'avaliador.id = avaliacao.avaliadorId AND avaliador.tipo_avaliador = :tipoReal',
+  { tipoReal: TipoAvaliador.REAL },
+)
       .leftJoinAndSelect('projeto.orientadores', 'projetoOrientador', "projetoOrientador.status = 'aceito'")
       .leftJoinAndSelect('projetoOrientador.orientador', 'orientador')
       .select([
         'orientador.id AS orientadorId',
         'orientador.nome AS orientadorNome',
         'orientador.email_institucional AS email',
-        'AVG(avaliacao.nota) AS mediaGeral',
+        'AVG(CASE WHEN avaliador.id IS NOT NULL THEN avaliacao.nota ELSE NULL END) AS mediaGeral',
         'COUNT(DISTINCT projeto.id) AS totalProjetos',
       ])
       .groupBy('orientador.id')
